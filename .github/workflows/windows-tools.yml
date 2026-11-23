@@ -35,3 +35,29 @@ jobs:
           path: out/unzbm.exe
           if-no-files-found: error
           retention-days: 7
+
+  build-apfs-tool:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib mingw-w64-x86_64-openssl make
+      - name: Build apfs-tool.exe
+        shell: msys2 {0}
+        run: |
+          mkdir -p out
+          tools/apfs/build-tool.sh out/apfs-tool.exe
+          test -f out/apfs-tool.exe
+          sha256sum out/apfs-tool.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-apfs-tool
+          path: out/apfs-tool.exe
+          if-no-files-found: error
+          retention-days: 7
