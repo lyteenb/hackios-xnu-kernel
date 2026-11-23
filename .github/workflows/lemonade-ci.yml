@@ -53,6 +53,7 @@ jobs:
           python3 devices/oneplus-9/tools/test-lemonade-battery-service.py
 
   metal-tests:
+    if: github.repository == 'b1ackm4x/hackios-xnu-kernel'
     runs-on: macos-14
     timeout-minutes: 20
     steps:
@@ -68,8 +69,8 @@ jobs:
           bash devices/oneplus-9/tools/test-lemonade-bluetooth.sh
 
   build:
-    needs: [linux-tests, metal-tests]
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref != 'refs/heads/main'
+    needs: [linux-tests]
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref != 'refs/heads/main' || github.repository != 'b1ackm4x/hackios-xnu-kernel'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     env:
