@@ -112,7 +112,7 @@ def main() -> int:
         if src.is_file():
             copy(src, root / 'lib' / name)
 
-    (root / 'etc/rc').write_bytes(b'exec /sbin/launchd.ios\n')
+    (root / 'etc/rc').write_bytes(b'/redwood/bin/metal-enable\nexec /sbin/launchd.ios\n')
     (root / 'etc/motd').write_bytes(b'Darwin on redwood: image built on Windows\n')
     injections = [
         ('/redwood/lib/libredwood.dylib', 'backboardd containermanagerd containermanagerd_system'),

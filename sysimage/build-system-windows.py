@@ -121,6 +121,7 @@ def main() -> int:
 
     (sysroot / 'redwood').mkdir(parents=True, exist_ok=True)
     (sysroot / 'System/Library/Caches').mkdir(parents=True, exist_ok=True)
+    (sysroot / 'System/Library/Extensions').mkdir(parents=True, exist_ok=True)
     (sysroot / 'System/Volumes/iOS').mkdir(parents=True, exist_ok=True)
     (sysroot / 'System/Cryptexes').mkdir(parents=True, exist_ok=True)
     clone_tree(args.cryptex, sysroot / 'System/Cryptexes/OS')
@@ -153,6 +154,8 @@ def main() -> int:
     add(0o40755, 0, 0, 'System/Volumes/iOS')
     add(0o40755, 0, 0, 'System/Library/Caches')
     add(0o120755, 0, 0, 'System/Library/Caches/com.apple.dyld', '/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld')
+    add(0o40755, 0, 0, 'System/Library/Extensions')
+    add(0o120755, 0, 0, 'System/Library/Extensions/RedwoodMetal.bundle', '/redwood/lib/RedwoodMetal.bundle')
     add(0o40755, 0, 0, 'System/Cryptexes')
     add(0o40755, 0, 0, 'System/Cryptexes/OS')
     add(0o40755, 0, 0, 'System/Cryptexes/App')

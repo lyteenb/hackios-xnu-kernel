@@ -106,8 +106,8 @@ def wait_for(fn, seconds):
     return None
 
 
-def fb(serial, *args, timeout=40):
-    return command(['fastboot', '-s', serial, *args], timeout=timeout)
+def fb(serial, *args, timeout=40, check=True):
+    return command(['fastboot', '-s', serial, *args], timeout=timeout, check=check)
 
 
 def boot_target(manifest):
