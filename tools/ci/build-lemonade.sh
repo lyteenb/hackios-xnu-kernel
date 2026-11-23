@@ -24,16 +24,6 @@ clang --version
 python3 --version
 python3 tools/ci/setup-toolchain.py
 bash xnu/apply.sh
-python3 - <<'PY'
-from pathlib import Path
-p = Path('xnu-src/xnu-8796.121.2/bsd/kern/mach_loader.c')
-s = p.read_text()
-needle = 'if ((error = namei(ndp)) != 0) {'
-if needle not in s:
-    raise SystemExit('debug patch anchor missing')
-s = s.replace(needle, 'printf("LEMONADE-DEBUG get_macho_vnode path=%s cputype=%x\\n", path, cputype);\n\tif ((error = namei(ndp)) != 0) {', 1)
-p.write_text(s)
-PY
 bash xnu-deps/setup.sh
 bash tools/mk-ath11k.sh
 # WLFW emits a generated header; a cold build has no BSD object directory yet.

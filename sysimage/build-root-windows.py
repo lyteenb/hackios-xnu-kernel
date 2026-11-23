@@ -112,17 +112,17 @@ def main() -> int:
         if src.is_file():
             copy(src, root / 'lib' / name)
 
-    (root / 'etc/rc').write_text('exec /sbin/launchd.ios\n', encoding='ascii')
-    (root / 'etc/motd').write_text('Darwin on redwood: image built on Windows\n', encoding='ascii')
+    (root / 'etc/rc').write_bytes(b'exec /sbin/launchd.ios\n')
+    (root / 'etc/motd').write_bytes(b'Darwin on redwood: image built on Windows\n')
     injections = [
         ('/redwood/lib/libredwood.dylib', 'backboardd containermanagerd containermanagerd_system'),
         ('/redwood/lib/libredwood-sb.dylib', 'SpringBoard'),
         ('/redwood/lib/libredwood-media.dylib', 'mediaserverd'),
     ]
-    (root / 'etc/inject.conf').write_text(
+    (root / 'etc/inject.conf').write_bytes(
         ''.join(f'{lib} {names}\n' for lib, names in injections
-                if (root / 'lib' / Path(lib).name).is_file()), encoding='utf-8')
-    skel = (ROOT / 'sysimage/var.skel').read_text(encoding='utf-8')
+                if (root / 'lib' / Path(lib).name).is_file()).encode('utf-8'))
+    skel = (ROOT / 'sysimage/var.skel').read_text(encoding='utf-8').replace('\r\n', '\n')
     skel = skel.replace('l\t/usr/share/zoneinfo\t/private/var/db/timezone/zoneinfo',
                         'l\t/usr/share/zoneinfo.default\t/private/var/db/timezone/zoneinfo')
     skel = skel.replace('l\t/var/db/timezone/zoneinfo/US/Pacific\t/private/var/db/timezone/localtime',
@@ -136,7 +136,7 @@ def main() -> int:
                 copy(p, root / 'var' / rel)
                 owner = 501 if rel.as_posix().startswith('mobile/') else 0
                 skel += f'f\t644\t{owner}\t{owner}\t/private/var/{rel.as_posix()}\t/var/{rel.as_posix()}\n'
-    (root / 'etc/var.skel').write_text(skel, encoding='utf-8')
+    (root / 'etc/var.skel').write_bytes(skel.encode('utf-8'))
 
     job_cmd = [sys.executable, str(ROOT / 'userland/mkjobs.py'), str(args.jobs),
                str(root / 'LaunchDaemons'), *JOBS]
