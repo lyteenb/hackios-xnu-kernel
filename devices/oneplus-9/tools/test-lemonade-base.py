@@ -166,6 +166,12 @@ class BasePolicy(unittest.TestCase):
         for location in ('usb:2-1','2-1.1'):
             with patch.object(base.launch,'command',return_value='List of devices attached\n'+target+' device '+location+' model:LE2110\n'):
                 self.assertEqual(base.launch.adb_target(manifest),target)
+        current_adb = target + ' device product:OnePlus9_CH model:LE2110 device:OnePlus9 transport_id:2\n'
+        with patch.object(base.launch,'command',return_value='List of devices attached\n'+current_adb):
+            self.assertEqual(base.launch.adb_target(manifest),target)
+        tcp_adb = '192.0.2.2:5555 device product:OnePlus9_CH model:LE2110 device:OnePlus9 transport_id:2\n'
+        with patch.object(base.launch,'command',return_value='List of devices attached\n'+tcp_adb):
+            self.assertIsNone(base.launch.adb_target(manifest))
         for row in (target+' device product:lemonade', target+' unauthorized usb:2-1', 'another-phone device usb:2-1'):
             with patch.object(base.launch,'command',return_value='List of devices attached\n'+row+'\n'):
                 self.assertIsNone(base.launch.adb_target(manifest))

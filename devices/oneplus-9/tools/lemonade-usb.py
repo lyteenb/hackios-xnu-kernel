@@ -298,9 +298,12 @@ def main():
             cells = line.split()
             # Recent libusb-backed adb prints a bare topology path (2-1.1),
             # while other backends print usb:<path>. Neither occurs on TCP/TLS.
-            physical = len(cells) >= 3 and (cells[2].startswith("usb:") or
-                                          re.fullmatch(r"\d+-\d+(?:\.\d+)*", cells[2]))
-            if physical and cells[1] == "device" and matches(cells[0]):
+            if len(cells) < 3 or cells[1] != "device":
+                continue
+            topology = cells[2].startswith("usb:") or re.fullmatch(r'\d+-\d+(?:\.\d+)*', cells[2])
+            detailed_usb = (":" not in cells[0] and any(c.startswith("transport_id:") for c in cells[3:]) and
+                            any(c.startswith("model:") for c in cells[3:]) and any(c.startswith("device:") for c in cells[3:]))
+            if (topology or detailed_usb) and matches(cells[0]):
                 return cells[0]
         return None
 

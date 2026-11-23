@@ -1,0 +1,92 @@
+name: OnePlus 9 UEFI and loader
+
+on:
+  workflow_dispatch:
+    inputs:
+      loader_usb_serial:
+        description: 'Device-bound xnuloader USB serial'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      MU_PIN: e51cd877e31c8fbb322032dc4cb6715e83d25ad3
+      LOADER_USB_SERIAL: ${{ inputs.loader_usb_serial }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Install UEFI and loader tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang lld llvm nasm acpica-tools uuid-dev \
+            device-tree-compiler python3 python3-pip python3-venv \
+            git curl ca-certificates libssl-dev zlib1g-dev liblz4-dev \
+            libzstd-dev libxml2-dev pkg-config cmake ninja-build meson \
+            gawk flex bison m4 autoconf automake libtool unzip xz-utils
+
+      - name: Clone pinned Mu-Silicium
+        run: |
+          git clone https://github.com/Project-Silicium/Mu-Silicium.git Mu-Silicium
+          git -C Mu-Silicium checkout "$MU_PIN"
+          git -C Mu-Silicium submodule update --init --recursive
+
+      - name: Apply OnePlus 9 UEFI hooks
+        run: python3 tools/ci/prepare-mu-lemonade.py
+
+      - name: Install Mu-Silicium Python dependencies
+        run: |
+          python3 -m venv .uefi-venv
+          . .uefi-venv/bin/activate
+          python -m pip install -r Mu-Silicium/pip-requirements.txt
+          D=Mu-Silicium/Mu_Basecore/BaseTools/Bin/mu_nasm_extdep
+          mkdir -p "$D/Linux-ARM-64"
+          echo 'version: 20016.1.1' > "$D/extdep_state.yaml"
+          ln -sf /usr/bin/nasm "$D/Linux-ARM-64/nasm"
+          ln -sf /usr/bin/ndisasm "$D/Linux-ARM-64/ndisasm"
+
+      - name: Build OnePlus 9 UEFI
+        run: |
+          . .uefi-venv/bin/activate
+          cd Mu-Silicium
+          python3 Platforms/OnePlus/lemonadePkg/DeviceBuild.py --setup
+          python3 Platforms/OnePlus/lemonadePkg/DeviceBuild.py --update
+          python3 build_uefi.py -d lemonade -r RELEASE
+
+      - name: Build device-bound XNU loader
+        env:
+          LOADER_IDENTITY_H_B64: ${{ secrets.LOADER_IDENTITY_H_B64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          value = os.environ.get('LOADER_IDENTITY_H_B64', '')
+          if not value:
+              raise SystemExit('LOADER_IDENTITY_H_B64 secret is missing')
+          Path('xnuloader/identity.h').write_bytes(base64.b64decode(value, validate=True))
+          PY
+          bash xnuloader/build.sh
+
+      - name: Collect UEFI and loader outputs
+        run: |
+          mkdir -p out/uefi
+          cp Mu-Silicium/BootShim/BootShim.bin out/uefi/BootShim.bin
+          cp Mu-Silicium/Build/lemonadePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd out/uefi/SILICIUM_UEFI.fd
+          cp xnuloader/loader.efi out/uefi/loader.efi
+          sha256sum out/uefi/* | tee out/uefi/SHA256SUMS
+
+      - name: Upload UEFI and loader
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-uefi-loader-${{ github.run_id }}
+          path: out/uefi
+          if-no-files-found: error
+          retention-days: 7

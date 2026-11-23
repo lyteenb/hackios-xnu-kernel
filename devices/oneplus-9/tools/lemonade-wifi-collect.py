@@ -29,8 +29,10 @@ def target():
         parts = line.split()
         if len(parts) < 3 or parts[1] != 'device':
             continue
-        usb = parts[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', parts[2])
-        if usb and hashlib.sha256(parts[0].encode()).hexdigest() == expected:
+        topology = parts[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', parts[2])
+        detailed_usb = (':' not in parts[0] and any(p.startswith('transport_id:') for p in parts[3:]) and
+                        any(p.startswith('model:') for p in parts[3:]) and any(p.startswith('device:') for p in parts[3:]))
+        if (topology or detailed_usb) and hashlib.sha256(parts[0].encode()).hexdigest() == expected:
             return parts[0]
     raise RuntimeError('Baseline-matched OnePlus 9 is not available over USB')
 

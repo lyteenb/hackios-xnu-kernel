@@ -38,8 +38,10 @@ def main():
             cells = line.split()
             if len(cells) < 3 or cells[1] != 'device':
                 continue
-            physical = cells[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', cells[2])
-            if physical and hashlib.sha256(cells[0].encode()).hexdigest() == baseline['hardware_serial_sha256']:
+            topology = cells[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', cells[2])
+            detailed_usb = (':' not in cells[0] and any(c.startswith('transport_id:') for c in cells[3:]) and
+                            any(c.startswith('model:') for c in cells[3:]) and any(c.startswith('device:') for c in cells[3:]))
+            if (topology or detailed_usb) and hashlib.sha256(cells[0].encode()).hexdigest() == baseline['hardware_serial_sha256']:
                 serial = cells[0]
                 break
         if serial:

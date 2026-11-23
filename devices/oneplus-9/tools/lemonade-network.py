@@ -60,9 +60,12 @@ def read_current(root):
     serial = None
     for line in command(['adb', 'devices', '-l']).decode().splitlines()[1:]:
         fields = line.split()
-        if (len(fields) >= 3 and fields[1] == 'device' and
-                (fields[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', fields[2])) and
-                hashlib.sha256(fields[0].encode()).hexdigest() == expected):
+        if len(fields) < 3 or fields[1] != 'device':
+            continue
+        topology = fields[2].startswith('usb:') or re.fullmatch(r'\d+-\d+(?:\.\d+)*', fields[2])
+        detailed_usb = (':' not in fields[0] and any(f.startswith('transport_id:') for f in fields[3:]) and
+                        any(f.startswith('model:') for f in fields[3:]) and any(f.startswith('device:') for f in fields[3:]))
+        if (topology or detailed_usb) and hashlib.sha256(fields[0].encode()).hexdigest() == expected:
             serial = fields[0]
     if serial is None:
         raise ValueError('The baseline Android phone is not connected over USB')

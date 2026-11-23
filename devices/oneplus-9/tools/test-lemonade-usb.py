@@ -682,6 +682,11 @@ class DeviceSafety(unittest.TestCase):
         self.run_action("boot")
         self.assertIn(["fastboot", "-s", self.serial, "boot", str(self.root / "out/lemonade-boot.img")], self.calls)
 
+    def test_detailed_adb_usb_fields_without_topology(self):
+        self.adb += self.serial + " device product:OnePlus9_CH model:LE2110 device:OnePlus9 transport_id:2\n"
+        self.run_action("boot")
+        self.assertIn(["fastboot", "-s", self.serial, "boot", str(self.root / "out/lemonade-boot.img")], self.calls)
+
     def test_stock_lahaina_product_with_matching_identity(self):
         self.fastboot = self.serial + "\tfastboot\n"
         self.product = "lahaina"
