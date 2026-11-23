@@ -61,6 +61,12 @@ jobs:
           python3 Platforms/OnePlus/lemonadePkg/DeviceBuild.py --update
           python3 build_uefi.py -d lemonade -r RELEASE
 
+      - name: Build boot shim for lemonade
+        run: |
+          cd Mu-Silicium/BootShim
+          rm -f BootShim.elf BootShim.bin
+          make REQUIRES_KERNEL_HEADER=1 FD_BASE=0x9FD00000 FD_SIZE=0x200000 CFLAGS="--target=aarch64-linux-gnu -DPAYLOAD_BASE=0xF0000000"
+
       - name: Build device-bound XNU loader
         env:
           LOADER_IDENTITY_H_B64: ${{ secrets.LOADER_IDENTITY_H_B64 }}

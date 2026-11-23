@@ -40,12 +40,14 @@ args = ap.parse_args()
 fd_path = os.environ.get('UEFI_FD') or os.path.join(MU, f'Build/{TARGET}Pkg/{args.mode}_CLANGPDB/FV/SILICIUM_UEFI.fd')
 if os.path.isfile(fd_path) and os.path.isdir(os.path.join(MU, 'BootShim')):
     shim_dir = os.path.join(MU, 'BootShim')
-    for f in ('BootShim.elf', 'BootShim.bin'):
-        try: os.unlink(os.path.join(shim_dir, f))
-        except FileNotFoundError: pass
-    subprocess.check_call(['make', 'REQUIRES_KERNEL_HEADER=1', f'FD_BASE={FD_BASE:#x}', f'FD_SIZE={FD_SIZE:#x}',
-                           f'CFLAGS=--target=aarch64-linux-gnu -DPAYLOAD_BASE={PAYLOAD_BASE:#x}'],
-                          cwd=shim_dir, stdout=subprocess.DEVNULL)
+    prebuilt_shim = os.environ.get('BOOTSHIM_PREBUILT') == '1'
+    if not prebuilt_shim:
+        for f in ('BootShim.elf', 'BootShim.bin'):
+            try: os.unlink(os.path.join(shim_dir, f))
+            except FileNotFoundError: pass
+        subprocess.check_call(['make', 'REQUIRES_KERNEL_HEADER=1', f'FD_BASE={FD_BASE:#x}', f'FD_SIZE={FD_SIZE:#x}',
+                               f'CFLAGS=--target=aarch64-linux-gnu -DPAYLOAD_BASE={PAYLOAD_BASE:#x}'],
+                              cwd=shim_dir, stdout=subprocess.DEVNULL)
     parts = {'shim': os.path.join(shim_dir, 'BootShim.bin'), 'fd': fd_path,
              'dtb': os.path.join(MU, f'Resources/DTBs/{TARGET}.dtb'), 'ramdisk': os.path.join(MU, 'Resources/ramdisk'),
              'mkbootimg': os.path.join(MU, 'Resources/Scripts/mkbootimg.py')}
