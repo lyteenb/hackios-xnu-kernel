@@ -33,6 +33,62 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef _WIN32
+#include <errno.h>
+#include <io.h>
+/* MinGW's unistd.h does not declare pread/pwrite.  The descriptor is shared by
+ * the worker threads, so seek and access as one operation under this lock. */
+static pthread_mutex_t file_io_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static ssize_t
+win_pread(int fd, void *buf, size_t len, off_t off)
+{
+	ssize_t result;
+	int saved;
+
+	pthread_mutex_lock(&file_io_lock);
+	if (_lseeki64(fd, (__int64)off, SEEK_SET) < 0) {
+		saved = errno;
+		pthread_mutex_unlock(&file_io_lock);
+		errno = saved;
+		return -1;
+	}
+	result = (ssize_t)_read(fd, buf, (unsigned int)len);
+	saved = errno;
+	pthread_mutex_unlock(&file_io_lock);
+	errno = saved;
+	return result;
+}
+
+static ssize_t
+win_pwrite(int fd, const void *buf, size_t len, off_t off)
+{
+	ssize_t result;
+	int saved;
+
+	pthread_mutex_lock(&file_io_lock);
+	if (_lseeki64(fd, (__int64)off, SEEK_SET) < 0) {
+		saved = errno;
+		pthread_mutex_unlock(&file_io_lock);
+		errno = saved;
+		return -1;
+	}
+	result = (ssize_t)_write(fd, buf, (unsigned int)len);
+	saved = errno;
+	pthread_mutex_unlock(&file_io_lock);
+	errno = saved;
+	return result;
+}
+
+#define pread win_pread
+#define pwrite win_pwrite
+#define O_BINARY _O_BINARY
+#endif
+
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+
 #include "apfs_lib.h"
 #include "apfs_write.h"
 #include "apfs_store.h"
@@ -209,7 +265,7 @@ static int
 open_image(const char *path, struct apfs_nx *nx, struct apfs_vol *vol)
 {
 	struct apfs_dev dev;
-	int fd = open(path, want_write ? O_RDWR : O_RDONLY);
+	int fd = open(path, (want_write ? O_RDWR : O_RDONLY) | O_BINARY);
 	uint32_t i;
 	int error;
 

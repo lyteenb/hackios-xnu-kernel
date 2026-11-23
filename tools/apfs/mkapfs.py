@@ -140,7 +140,7 @@ def read_tree(path, name=''):
 
 def apply_manifest(root, manifest):
     for raw in open(manifest, 'rb'):
-        fields = raw.rstrip(b'\n').split(b'\t')
+        fields = raw.rstrip(b'\r\n').split(b'\t')
         if len(fields) < 4 or not fields[3]:
             continue
         mode, uid, gid = int(fields[0], 8), int(fields[1]), int(fields[2])
@@ -157,8 +157,15 @@ def apply_manifest(root, manifest):
                     leaf = node.children[parts[-1]] = Node(parts[-1], mode)
                 elif stat.S_ISLNK(mode) and len(fields) > 4:
                     leaf = node.children[parts[-1]] = Node(parts[-1], mode, target=fields[4])
+                elif stat.S_ISREG(mode) and len(fields) > 4 and fields[4]:
+                    # A host name Windows cannot represent (for example an iOS name
+                    # containing '?') may use a safe source path in the fifth field.
+                    leaf = node.children[parts[-1]] = Node(
+                        parts[-1], mode, source=fields[4].decode('utf-8', 'surrogateescape'))
                 else:
                     continue
+            elif stat.S_ISREG(mode) and len(fields) > 4 and fields[4]:
+                leaf.source = fields[4].decode('utf-8', 'surrogateescape')
             # (owner, group and permissions; not the kind: a link this tree has where the manifest
             # says directory -- the system image's LaunchDaemons -- stays a link)
             if stat.S_IFMT(leaf.mode) == stat.S_IFMT(mode):

@@ -145,10 +145,27 @@ SKIP_AUDIO = ('System/Library/Audio/UISounds/nano/',)
 KEEP_LANG = ('en', 'Base', 'English', 'en_US', 'en_GB')
 
 
+def listing_lines(listing):
+    """Decode 7z's technical listing without losing non-ASCII names.
+
+    On Windows, 7z writes a few non-ASCII names in the active ANSI code page while
+    the rest of the listing is ASCII.  Decode UTF-8 first and fall back to GBK for
+    those lines (the Chinese Windows code page used for this IPSW); never replace a
+    name before it reaches system.files/manifest.
+    """
+    with open(listing, 'rb') as stream:
+        for raw in stream:
+            raw = raw.rstrip(b'\r\n')
+            try:
+                yield raw.decode('utf-8')
+            except UnicodeDecodeError:
+                yield raw.decode('gbk', errors='replace')
+
+
 def entries(listing):
     """Yield one dict per entry of a 7z technical listing."""
     entry = {}
-    for line in open(listing, errors='replace'):
+    for line in listing_lines(listing):
         line = line.rstrip('\n')
         if not line:
             if 'Path' in entry and 'Mode' in entry:
@@ -157,6 +174,8 @@ def entries(listing):
         elif ' = ' in line or line.endswith(' ='):
             key, _, value = line.partition(' =')
             entry[key] = value[1:] if value.startswith(' ') else value
+            if key == 'Path':
+                entry[key] = entry[key].replace('\\', '/')
     if 'Path' in entry and 'Mode' in entry:
         yield entry
 

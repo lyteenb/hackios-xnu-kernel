@@ -16,6 +16,7 @@
 # IMAGE is a raw APFS partition, or a .dmg -- the APFS partition inside it is used.
 # -v VOLUME picks a volume by name or index (default: the first one with a root directory).
 
+import hashlib
 import os
 import struct
 import sys
@@ -55,6 +56,8 @@ BTNODE_HASHED = 0x0008
 BTNODE_NOHEADER = 0x0010
 
 BTREE_PHYSICAL = 0x00000010
+BTREE_HASHED = 0x00000080
+BTREE_NOHEADER = 0x00000100
 
 BTREE_NODE_DATA_OFF = 56      # where btn_data starts, i.e. sizeof(btree_node_phys)
 BTREE_INFO_SIZE = 40          # sizeof(btree_info), kept at the end of a root node
@@ -176,12 +179,23 @@ def checksum_ok(block):
 
 class RawImage:
     def __init__(self, path):
-        self.fd = os.open(path, os.O_RDONLY)
+        flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0)
+        self.fd = os.open(path, flags)
         self.size = os.lseek(self.fd, 0, os.SEEK_END)
         self.path = path
 
     def read(self, off, length):
-        return os.pread(self.fd, length, off)
+        if hasattr(os, 'pread'):
+            return os.pread(self.fd, length, off)
+        os.lseek(self.fd, off, os.SEEK_SET)
+        chunks = []
+        while length:
+            data = os.read(self.fd, length)
+            if not data:
+                break
+            chunks.append(data)
+            length -= len(data)
+        return b''.join(chunks)
 
     def close(self):
         os.close(self.fd)
@@ -327,7 +341,8 @@ class Btree:
         self.name = name
         self.resolve = resolve
         self.root_addr = self._addr(root_oid, physical_hint=True)
-        rb = blocks.get(self.root_addr)
+        self.root_oid = root_oid
+        rb = self._node_block(self.root_addr)
         (bt_flags, bt_node_size, bt_key_size, bt_val_size) = struct.unpack_from(
             "<IIII", rb, len(rb) - BTREE_INFO_SIZE)
         self.bt_flags = bt_flags
@@ -349,14 +364,37 @@ class Btree:
             return oid
         return self.resolve(oid)
 
-    def node(self, oid):
+    def _node_block(self, addr):
+        # APFS hashed B-trees may use BTNODE_NOHEADER nodes. Such nodes begin at
+        # offset 32 and deliberately have no object header or Fletcher-64 checksum;
+        # bytes 0..31 are zero padding. Verify ordinary nodes normally.
+        blk = self.blocks.get(addr, verify=False)
+        flags = struct.unpack_from("<H", blk, 32)[0]
+        if not (flags & BTNODE_NOHEADER):
+            self.blocks.cksum_checked += 1
+            if not checksum_ok(blk):
+                self.blocks.cksum_bad += 1
+                raise ApfsError("block %d: bad Fletcher-64 checksum" % addr)
+        return blk
+
+    def node(self, oid, expected_hash=None):
         addr = oid if (self.physical or self.resolve is None) else self.resolve(oid)
-        blk = self.blocks.get(addr)
+        blk = self._node_block(addr)
+        if expected_hash is not None and (self.bt_flags & BTREE_HASHED):
+            actual = hashlib.sha256(blk).digest()
+            if actual[:len(expected_hash)] != expected_hash:
+                raise ApfsError("block %d: not the node its parent names (SHA-256)" % addr)
         self.nodes_read += 1
         return Node(addr, blk, self.blocks.block_size, self.key_size, self.val_size)
 
     def child(self, node, i):
-        return self.node(node.child_oid(i))
+        if not (self.bt_flags & BTREE_HASHED):
+            return self.node(node.child_oid(i))
+        _key, value = node.entry(i)
+        if len(value) != 8 + 32:
+            raise ApfsError("sealed tree node has a %d-byte child entry" % len(value))
+        oid = struct.unpack_from("<Q", value, 0)[0] + self.root_oid
+        return self.node(oid, value[8:40])
 
     def iter_from(self, less):
         """
@@ -571,9 +609,15 @@ class Volume:
         self.next_doc_id = struct.unpack_from("<I", b, off)[0]
         off += 4
         self.role = struct.unpack_from("<H", b, off)[0]
+        # Sealed iOS volumes keep file extents in this separate physical tree.
+        self.fext_tree_oid = struct.unpack_from("<Q", b, 0x408)[0]
+        self.fext_tree_type = struct.unpack_from("<I", b, 0x410)[0]
         self.xid = obj_hdr(b)[1]
         self._omap = None
         self._tree = None
+        self._extentref_tree = None
+        self._fext_tree = None
+        self._dir_cache = {}
 
     @property
     def case_insensitive(self):
@@ -626,6 +670,9 @@ class Volume:
 
     def dir_entries(self, obj_id):
         """(name, file_id, d_type) for each entry of a directory."""
+        cached = self._dir_cache.get(obj_id)
+        if cached is not None:
+            return cached
         out = []
         for k, v in self.records(obj_id, TYPE_DIR_REC):
             # iOS volumes use the hashed key: a 32-bit field holding the name length and
@@ -636,6 +683,7 @@ class Volume:
             file_id, _date, flags = struct.unpack_from("<QQH", v, 0)
             out.append((name.decode("utf-8", "surrogateescape"), file_id,
                         flags & DREC_TYPE_MASK))
+        self._dir_cache[obj_id] = out
         return out
 
     def xattrs(self, obj_id):
@@ -651,6 +699,23 @@ class Volume:
     def extents(self, stream_id):
         """(logical offset, length, physical block) for one data stream, in order."""
         out = []
+        if self.fext_tree_oid:
+            # A sealed volume has no file-extent records in its file-system tree.
+            # Its physical file-extent tree is keyed by (stream id, logical offset).
+            if self._fext_tree is None:
+                self._fext_tree = Btree(
+                    self.c.blocks, self.fext_tree_oid, resolve=None, name="fext")
+            for k, v in self._fext_tree.iter_all():
+                if len(k) < 16 or len(v) < 16:
+                    continue
+                sid = struct.unpack_from("<Q", k, 0)[0]
+                if sid != stream_id:
+                    continue
+                logical = struct.unpack_from("<Q", k, 8)[0]
+                len_and_flags, phys = struct.unpack_from("<QQ", v, 0)
+                out.append((logical, len_and_flags & J_FILE_EXTENT_LEN_MASK, phys))
+            out.sort()
+            return out
         for k, v in self.records(stream_id, TYPE_FILE_EXTENT):
             logical = struct.unpack_from("<Q", k, 8)[0]
             len_and_flags, phys, _crypto = struct.unpack_from("<QQQ", v, 0)
